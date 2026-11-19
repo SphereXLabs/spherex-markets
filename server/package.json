@@ -1,0 +1,24 @@
+{
+  "name": "spherex-markets-server",
+  "version": "1.0.0",
+  "description": "SphereX Markets API — Express market data, news, portfolio & TR macro endpoints",
+  "type": "module",
+  "license": "MIT",
+  "author": "SphereX Labs",
+  "main": "index.js",
+  "scripts": {
+    "dev": "node --watch index.js",
+    "start": "node index.js",
+    "test": "node --test --test-timeout=120000 test/api.test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.2",
+    "node-cache": "^5.1.2",
+    "rss-parser": "^3.13.0",
+    "yahoo-finance2": "^2.13.3"
+  }
+}

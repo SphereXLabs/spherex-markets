@@ -1,0 +1,13 @@
+{
+  "name": "SphereX Markets",
+  "short_name": "SphereX",
+  "description": "SphereX Labs — equities, crypto, FX, metals & TR macro tracker",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f1117",
+  "theme_color": "#4263eb",
+  "orientation": "portrait-primary",
+  "icons": [
+    { "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}

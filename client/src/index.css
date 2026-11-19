@@ -1,0 +1,75 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-surface text-gray-100 font-sans antialiased;
+  }
+
+  ::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-surface;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface-border rounded-full;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-surface-card border border-surface-border rounded-xl p-4;
+  }
+  .card-hover {
+    @apply card hover:bg-surface-hover hover:border-spherex-700/50 transition-all duration-200 cursor-pointer;
+  }
+  .badge-up {
+    @apply text-emerald-400 bg-emerald-400/10 px-2 py-0.5 rounded text-xs font-mono font-medium;
+  }
+  .badge-down {
+    @apply text-red-400 bg-red-400/10 px-2 py-0.5 rounded text-xs font-mono font-medium;
+  }
+  .nav-link {
+    @apply flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-400 hover:text-white hover:bg-surface-hover transition-colors;
+  }
+  .nav-link-active {
+    @apply nav-link text-white bg-spherex-700/20 text-spherex-300;
+  }
+}
+
+html.theme-light body {
+  @apply bg-gray-50 text-gray-900;
+}
+html.theme-light .card {
+  @apply bg-white border-gray-200;
+}
+html.theme-light .card-hover {
+  @apply bg-white border-gray-200 hover:bg-gray-50 hover:border-spherex-400;
+}
+html.theme-light .nav-link {
+  @apply text-gray-600 hover:text-gray-900 hover:bg-gray-100;
+}
+html.theme-light .nav-link-active {
+  @apply text-spherex-700 bg-spherex-50;
+}
+html.theme-light aside {
+  @apply bg-white border-gray-200;
+}
+html.theme-light header {
+  @apply bg-white/80 border-gray-200;
+}
+html.theme-light .text-white {
+  @apply text-gray-900;
+}
+html.theme-light .bg-surface {
+  @apply bg-gray-100;
+}
+html.theme-light .bg-surface-card {
+  @apply bg-white;
+}
+html.theme-light .border-surface-border {
+  @apply border-gray-200;
+}

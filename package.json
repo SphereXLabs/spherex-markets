@@ -1,0 +1,45 @@
+{
+  "name": "spherex-markets",
+  "version": "1.0.0",
+  "description": "SphereX Markets — open-source full-stack equities, crypto, FX/TRY, metals, news & TR macro tracker by SphereX Labs",
+  "private": true,
+  "license": "MIT",
+  "author": "SphereX Labs",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/SphereXLabs/spherex-markets.git"
+  },
+  "homepage": "https://github.com/SphereXLabs/spherex-markets#readme",
+  "bugs": {
+    "url": "https://github.com/SphereXLabs/spherex-markets/issues"
+  },
+  "keywords": [
+    "finance",
+    "markets",
+    "bist",
+    "crypto",
+    "forex",
+    "turkey",
+    "spherex",
+    "react",
+    "express"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev:server": "npm --prefix server run dev",
+    "dev:client": "npm --prefix client run dev",
+    "build": "npm --prefix client run build",
+    "typecheck": "npm --prefix client run typecheck",
+    "test": "npm --prefix server test",
+    "test:all": "npm run typecheck && npm run test && npm run build",
+    "install:all": "npm install && npm --prefix server install && npm --prefix client install",
+    "start": "npm --prefix server start",
+    "ci": "npm run typecheck && npm run test && npm run build"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  }
+}
