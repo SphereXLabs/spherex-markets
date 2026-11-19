@@ -1,25 +1,59 @@
+import { enableDemoMode, isDemoMode } from './demo/mode';
+import { resolveDemoDelete, resolveDemoGet, resolveDemoPost } from './demo/resolve';
+
+export { isDemoMode, subscribeDemoMode } from './demo/mode';
+
 const API = '/api';
+const BACKEND_TIMEOUT_MS = 4500;
+
+async function backendFetch(endpoint: string, init?: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), BACKEND_TIMEOUT_MS);
+  try {
+    return await fetch(`${API}${endpoint}`, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 async function postAPI<T>(endpoint: string, body?: unknown): Promise<T> {
-  const res = await fetch(`${API}${endpoint}`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  if (!res.ok) throw new Error(`API hatası: ${res.status}`);
-  return res.json();
+  if (isDemoMode()) return resolveDemoPost(endpoint, body) as Promise<T>;
+  try {
+    const res = await backendFetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    if (!res.ok) throw new Error(`API hatası: ${res.status}`);
+    return res.json();
+  } catch {
+    enableDemoMode();
+    return resolveDemoPost(endpoint, body) as Promise<T>;
+  }
 }
 
 async function deleteAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API}${endpoint}`, { method: 'DELETE' });
-  if (!res.ok) throw new Error(`API hatası: ${res.status}`);
-  return res.json();
+  if (isDemoMode()) return resolveDemoDelete(endpoint) as Promise<T>;
+  try {
+    const res = await backendFetch(endpoint, { method: 'DELETE' });
+    if (!res.ok) throw new Error(`API hatası: ${res.status}`);
+    return res.json();
+  } catch {
+    enableDemoMode();
+    return resolveDemoDelete(endpoint) as Promise<T>;
+  }
 }
 
 export async function fetchAPI<T>(endpoint: string): Promise<T> {
-  const res = await fetch(`${API}${endpoint}`);
-  if (!res.ok) throw new Error(`API hatası: ${res.status}`);
-  return res.json();
+  if (isDemoMode()) return resolveDemoGet(endpoint) as Promise<T>;
+  try {
+    const res = await backendFetch(endpoint);
+    if (!res.ok) throw new Error(`API hatası: ${res.status}`);
+    return res.json();
+  } catch {
+    enableDemoMode();
+    return resolveDemoGet(endpoint) as Promise<T>;
+  }
 }
 
 export const api = {
@@ -94,11 +128,7 @@ export const api = {
   portfolio: {
     get: (id: string) => fetchAPI<Portfolio>(`/portfolio/${id}`),
     save: (id: string, data: Partial<Portfolio>) =>
-      fetch(`${API}/portfolio/${id}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      }).then((r) => r.json()),
+      postAPI<Portfolio>(`/portfolio/${id}`, data),
     value: (id: string) => fetchAPI<PortfolioValue>(`/portfolio/${id}/value`),
   },
 };
@@ -549,9 +579,10 @@ export interface OnchainData {
 export interface MacroIndicator {
   id: string;
   name: string;
-  value: string;
+  value: string | number;
   period: string;
-  change?: string;
+  change?: string | number;
+  unit?: string;
   source: string;
   trend?: 'up' | 'down' | 'stable';
 }

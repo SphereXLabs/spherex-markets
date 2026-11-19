@@ -1,0 +1,15 @@
+services:
+  spherex-markets:
+    build: .
+    image: spherex-markets:latest
+    container_name: spherex-markets
+    ports:
+      - "${PORT:-3001}:3001"
+    environment:
+      PORT: 3001
+      NODE_ENV: production
+      SERVE_CLIENT: "true"
+      CACHE_TTL: "${CACHE_TTL:-60}"
+      COINGECKO_API_KEY: "${COINGECKO_API_KEY:-}"
+      USER_AGENT: "${USER_AGENT:-SphereXMarkets/1.0}"
+    restart: unless-stopped

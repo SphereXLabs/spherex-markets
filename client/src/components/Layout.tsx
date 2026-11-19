@@ -5,7 +5,7 @@ import {
   Briefcase, Newspaper, Search, RefreshCw, Activity, Landmark, Building2, Gem, Brain,
   Bell, Star, GitCompare, Grid3x3, Calendar, PiggyBank, Wrench, Sun, Moon, Globe,
 } from 'lucide-react';
-import { api, SearchResult } from '../api';
+import { api, SearchResult, isDemoMode, subscribeDemoMode } from '../api';
 import { timeAgo, formatPrice } from '../hooks';
 import { useLiveData } from '../hooks/useLiveData';
 import { useApp } from '../context/AppContext';
@@ -49,7 +49,10 @@ export default function Layout({ children }: LayoutProps) {
   const [results, setResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
+  const [demoMode, setDemoMode] = useState(isDemoMode());
   const searchRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => subscribeDemoMode(() => setDemoMode(true)), []);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -174,6 +177,14 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-2">
+              {demoMode && (
+                <span
+                  className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-medium tracking-wide text-amber-200/90 bg-amber-500/10 border border-amber-500/20"
+                  title="Backend API yok — Frankfurter, CoinGecko ve demo snapshot kullanılıyor"
+                >
+                  Canlı Web Demo Modu
+                </span>
+              )}
               <button onClick={() => setLang(lang === 'tr' ? 'en' : 'tr')}
                 className="p-2 rounded-lg bg-surface-card border border-surface-border text-gray-400 hover:text-white" title={lang === 'tr' ? 'English' : 'Türkçe'}>
                 <Globe className="w-4 h-4" />

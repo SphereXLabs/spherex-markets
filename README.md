@@ -3,7 +3,13 @@
 **SphereX Labs** — open-source full-stack market intelligence for equities, crypto, FX/TRY rates, precious metals, financial news, portfolio tracking, and Turkish macro / economic calendar data.
 
 [![CI](https://github.com/SphereXLabs/spherex-markets/actions/workflows/ci.yml/badge.svg)](https://github.com/SphereXLabs/spherex-markets/actions/workflows/ci.yml)
+[![Pages](https://img.shields.io/badge/GitHub%20Pages-Live%20Demo-2088FF?logo=github)](https://spherexlabs.github.io/spherex-markets/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![TypeScript](https://img.shields.io/badge/TypeScript-strict-3178C6?logo=typescript&logoColor=white)](client/tsconfig.json)
+
+**Live demo:** [https://spherexlabs.github.io/spherex-markets/](https://spherexlabs.github.io/spherex-markets/)
+
+> On GitHub Pages the UI runs in **Canlı Web Demo Modu**: browser-side Frankfurter + CoinGecko feeds plus curated snapshots when the Express API is unavailable — no error banners.
 
 ---
 
@@ -109,6 +115,25 @@ npm start
 # optional: SERVE_CLIENT=true npm start  (after build)
 ```
 
+### Docker
+
+```bash
+docker compose up --build
+# → http://localhost:3001  (API + static UI)
+```
+
+Or without Compose:
+
+```bash
+docker build -t spherex-markets .
+docker run --rm -p 3001:3001 spherex-markets
+```
+
+### GitHub Pages
+
+Every push to `main` builds the client with `base: /spherex-markets/` and deploys via `.github/workflows/pages.yml`.  
+Enable **Settings → Pages → Source: GitHub Actions** once on the repository.
+
 ### Quality checks
 
 ```bash
@@ -162,13 +187,13 @@ When upstream APIs fail, many market routes return **stale** or **fallback** pay
 
 ```
 spherex-markets/
-├── client/                 # React + Vite UI
-│   └── src/
+├── client/                 # React + Vite UI (+ demo/ live fallback)
 ├── server/                 # Express API
-│   ├── data/               # Static datasets + fallbacks
-│   ├── lib/                # Cache / respond helpers
-│   └── test/               # node:test API suite
-├── .github/workflows/ci.yml
+├── .github/workflows/
+│   ├── ci.yml              # typecheck · test · build
+│   └── pages.yml           # GitHub Pages deploy
+├── Dockerfile              # multi-stage API + UI
+├── docker-compose.yml
 ├── .env.example
 ├── LICENSE                 # MIT · Copyright (c) 2026 SphereX Labs
 └── README.md

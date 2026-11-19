@@ -5,15 +5,19 @@ import { AppProvider } from './context/AppContext';
 import App from './App';
 import './index.css';
 
+const rawBase = import.meta.env.BASE_URL || '/';
+const basename = rawBase === './' || rawBase === '/' ? undefined : rawBase.replace(/\/$/, '');
+
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch(() => {});
+    const swUrl = `${rawBase.endsWith('/') ? rawBase : `${rawBase}/`}sw.js`;
+    navigator.serviceWorker.register(swUrl).catch(() => {});
   });
 }
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter basename={basename}>
       <AppProvider>
         <App />
       </AppProvider>
