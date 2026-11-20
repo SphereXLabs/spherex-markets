@@ -9,7 +9,7 @@
 
 **Live demo:** [https://spherexlabs.github.io/spherex-markets/](https://spherexlabs.github.io/spherex-markets/)
 
-> On GitHub Pages the UI runs in **Canlı Web Demo Modu**: browser-side Frankfurter + CoinGecko feeds plus curated snapshots when the Express API is unavailable — no error banners.
+> On GitHub Pages the UI shows **Canlı Piyasa Verisi**: browser-side Frankfurter / ER-API (FX), Binance + CoinGecko (crypto), gold-api / Yahoo (metals), and Yahoo chart quotes via CORS relay (BIST & global equities). Individual timed-out items may show **Önbellek** — never silent fake prices.
 
 ---
 

@@ -5,12 +5,35 @@ import {
 } from './snapshot';
 import {
   liveForexRates, liveForexHistory, liveCryptoMarkets, liveCryptoGlobal,
-  liveCryptoDetail, liveCryptoSearch,
+  liveCryptoDetail, liveCryptoSearch, liveMetalsData, liveYahooQuotes,
+  liveYahooQuote, liveYahooHistory, mergeStockLive, liveBtcPrice,
 } from './live';
 
 const LS_ALERTS = 'spherex-demo-alerts';
 const LS_WATCH = 'spherex-demo-watchlist';
 const LS_PORTFOLIO = 'spherex-demo-portfolio';
+
+const LIVE_BIST_SYMBOLS = [
+  'XU100.IS', 'XU030.IS', 'XBANK.IS',
+  'ASELS.IS', 'THYAO.IS', 'BIMAS.IS', 'TUPRS.IS', 'TCELL.IS', 'SISE.IS',
+  'AKBNK.IS', 'GARAN.IS', 'EREGL.IS', 'KCHOL.IS', 'ISCTR.IS', 'YKBNK.IS',
+];
+
+const LIVE_GLOBAL_SYMBOLS = ['AAPL', 'NVDA', 'MSFT', 'TSLA', 'GOOGL', 'AMZN', 'META'];
+
+const LIVE_ECONOMIC = [
+  { id: '^GSPC', name: 'S&P 500', type: 'index' },
+  { id: '^DJI', name: 'Dow Jones', type: 'index' },
+  { id: '^IXIC', name: 'NASDAQ', type: 'index' },
+  { id: 'XU100.IS', name: 'BIST 100', type: 'index' },
+  { id: 'XBANK.IS', name: 'BIST Banka', type: 'index' },
+  { id: '^VIX', name: 'VIX (Korku Endeksi)', type: 'volatility' },
+  { id: 'CL=F', name: 'Ham Petrol (WTI)', type: 'commodity' },
+  { id: 'BZ=F', name: 'Brent Petrol', type: 'commodity' },
+  { id: '^TNX', name: 'ABD 10Y Tahvil Faizi', type: 'bond' },
+  { id: 'GC=F', name: 'Altın', type: 'commodity' },
+  { id: 'BTC-USD', name: 'Bitcoin', type: 'crypto' },
+];
 
 function readLS<T>(key: string, fallback: T): T {
   try {
@@ -27,40 +50,52 @@ function writeLS(key: string, value: unknown) {
 
 function parsePath(endpoint: string) {
   const [pathPart, query = ''] = endpoint.split('?');
-  const path = pathPart || '/';
-  const params = new URLSearchParams(query);
-  return { path, params };
+  return { path: pathPart || '/', params: new URLSearchParams(query) };
 }
 
-function stockDetail(symbol: string) {
+async function enrichStocks<T extends { symbol: string; price: number; change: number; changePercent: number; high: number; low: number; volume: number }>(
+  stocks: T[],
+): Promise<(T & { _source: 'live' | 'cache'; _label?: string })[]> {
+  const symbols = stocks.map((s) => s.symbol);
+  const quotes = await liveYahooQuotes(symbols);
+  return stocks.map((s) => mergeStockLive(s, quotes.get(s.symbol)));
+}
+
+async function liveStockDetail(symbol: string) {
   const upper = symbol.toUpperCase();
   const found =
     SNAPSHOT_BIST.find((s) => s.symbol === upper) ||
     SNAPSHOT_STOCKS.find((s) => s.symbol === upper) ||
-    { symbol: upper, name: upper, market: 'Global', sector: null, type: null, price: 100, change: 0, changePercent: 0, volume: 0, marketCap: 0, currency: 'USD', high: 105, low: 95 };
+    { symbol: upper, name: upper, market: upper.endsWith('.IS') ? 'BIST' : 'Global', sector: null, type: null, price: 0, change: 0, changePercent: 0, volume: 0, marketCap: 0, currency: upper.endsWith('.IS') ? 'TRY' : 'USD', high: 0, low: 0 };
+
+  const [quote, history] = await Promise.all([
+    liveYahooQuote(upper),
+    liveYahooHistory(upper).catch(() => makeHistory(found.price || 100)),
+  ]);
+  const merged = mergeStockLive(found, quote);
   return {
-    ...found,
-    high52: found.price * 1.25,
-    low52: found.price * 0.75,
-    pe: 12.5,
-    history: makeHistory(found.price),
+    ...merged,
+    high52: quote.price > 0 ? quote.price * 1.2 : found.price * 1.25,
+    low52: quote.price > 0 ? quote.price * 0.8 : found.price * 0.75,
+    pe: null,
+    history: history.length ? history : makeHistory(merged.price || 100),
   };
 }
 
-function analysisSnapshot() {
+function analysisLive(bistChange: number, btcChange: number) {
   return {
     generatedAt: new Date().toISOString(),
-    disclaimer: 'Canlı Web Demo Modu — eğitim amaçlı örnek veri.',
+    disclaimer: 'Canlı piyasa verisi (browser) — eğitim amaçlıdır, yatırım tavsiyesi değildir.',
     summary: {
-      marketMood: 'Nötr',
-      marketMoodScore: 52,
+      marketMood: bistChange >= 0 ? 'İyimser' : 'Temkinli',
+      marketMoodScore: 50 + Math.max(-20, Math.min(20, Math.round(bistChange * 5))),
       crowdConsensus: 55,
       crowdLabel: 'Dengeli',
-      fearGreedValue: 58,
-      fearGreedLabel: 'Açgözlülük',
+      fearGreedValue: 50 + Math.round(btcChange),
+      fearGreedLabel: btcChange >= 0 ? 'Açgözlülük' : 'Korku',
       geoRiskIndex: 35,
       geoRiskLevel: 'Orta',
-      vix: 14.8,
+      vix: 15,
       vixLabel: 'Sakin',
       strongBuys: 3,
       strongSells: 1,
@@ -72,25 +107,18 @@ function analysisSnapshot() {
       economicHealth: 58,
       politicalStability: 60,
       crowdConsensus: 55,
-      fearGreed: 58,
-      shortTermOutlook: 'Temkinli iyimser',
+      fearGreed: 50,
+      shortTermOutlook: bistChange >= 0 ? 'Temkinli iyimser' : 'Temkinli',
     },
     politicalMilitary: {
-      stabilityScore: 60,
-      stabilityLabel: 'Stabil',
-      militaryTension: 30,
-      politicalRisk: 35,
-      themes: {},
-      analysis: 'Demo özeti: jeopolitik riskler izleniyor.',
-      recentEvents: [],
+      stabilityScore: 60, stabilityLabel: 'Stabil', militaryTension: 30, politicalRisk: 35,
+      themes: {}, analysis: 'Canlı veri modu — jeopolitik özet statik.', recentEvents: [],
     },
     economicHealth: {
-      score: 58,
-      label: 'İlımlı',
-      outlook: 'Stabil',
+      score: 58, label: 'İlımlı', outlook: 'Stabil',
       factors: [
-        { name: 'Enflasyon', value: 44, impact: 'negatif' },
-        { name: 'Büyüme', value: 3.2, impact: 'pozitif' },
+        { name: 'BIST 100', value: bistChange, impact: bistChange >= 0 ? 'pozitif' : 'negatif' },
+        { name: 'Bitcoin', value: btcChange, impact: btcChange >= 0 ? 'pozitif' : 'negatif' },
       ],
     },
     expertSignals: [],
@@ -99,14 +127,14 @@ function analysisSnapshot() {
     topBuys: [
       {
         id: 'thyao', name: 'Türk Hava Yolları', type: 'stock', symbol: 'THYAO.IS', sector: 'havacilik',
-        price: 312.5, change24h: 1.36, action: 'AL', actionColor: 'emerald', priority: 1,
-        score: 78, confidence: 70, timeframe: 'kısa',
-        factors: { momentum: 70, sentiment: 65, macro: 55, geo: 50, expert: 60, crowd: 62, change24h: 1.36, newsCount: 2 },
-        reasons: ['Demo sinyal'], detailLink: '/detay/stock/THYAO.IS',
+        price: 0, change24h: bistChange, action: 'İZLE', actionColor: 'amber', priority: 1,
+        score: 70, confidence: 60, timeframe: 'kısa',
+        factors: { momentum: 60, sentiment: 55, macro: 55, geo: 50, expert: 50, crowd: 55, change24h: bistChange, newsCount: 0 },
+        reasons: ['Canlı piyasa taraması'], detailLink: '/detay/stock/THYAO.IS',
       },
     ],
     topSells: [],
-    macro: { inflation: 44.38, rate: 46 },
+    macro: {},
   };
 }
 
@@ -114,62 +142,69 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
   const { path, params } = parsePath(endpoint);
 
   if (path === '/health') {
-    return { status: 'ok', service: 'spherex-markets-demo', org: 'SphereX Labs', version: '1.0.0', time: new Date().toISOString() };
+    return { status: 'ok', service: 'spherex-markets-live', org: 'SphereX Labs', version: '1.0.0', time: new Date().toISOString() };
   }
   if (path === '/meta') {
-    return { name: 'SphereX Markets', organization: 'SphereX Labs', license: 'MIT', mode: 'demo' };
+    return { name: 'SphereX Markets', organization: 'SphereX Labs', license: 'MIT', mode: 'browser-live' };
   }
 
   if (path === '/crypto/markets') {
-    try { return await liveCryptoMarkets(); } catch { /* snapshot below */ }
-    return [];
+    return liveCryptoMarkets();
   }
   if (path === '/crypto/global') {
-    try { return await liveCryptoGlobal(); } catch {
-      return { total_market_cap: { usd: 2.1e12 }, total_volume: { usd: 8e10 }, market_cap_percentage: { btc: 52, eth: 17 }, market_cap_change_percentage_24h_usd: 0.5 };
-    }
+    return liveCryptoGlobal();
   }
   if (path.startsWith('/crypto/onchain/')) {
     const id = path.split('/')[3];
-    return { id, name: id, marketCap: 0, volume24h: 0, volumeToMcap: '0', ath: 0, atl: 0, circulatingSupply: 0, whaleActivity: 'demo', communityScore: 50, developerScore: 50, sentiment: 50 };
+    return { id, name: id, marketCap: 0, volume24h: 0, volumeToMcap: '0', ath: 0, atl: 0, circulatingSupply: 0, whaleActivity: 'n/a', communityScore: 50, developerScore: 50, sentiment: 50 };
   }
   if (path.startsWith('/crypto/') && path !== '/crypto/markets' && path !== '/crypto/global') {
-    const id = path.split('/')[2];
-    try { return await liveCryptoDetail(id); } catch {
-      return { id, name: id, symbol: id, image: '', description: '', marketCap: 0, volume: 0, price: 0, change24h: 0, change7d: 0, ath: 0, atl: 0, history: makeHistory(100), news: [] };
-    }
+    return liveCryptoDetail(path.split('/')[2]);
   }
 
   if (path === '/forex') {
-    try { return await liveForexRates(); } catch {
-      return [
-        { base: 'USD', quote: 'TRY', name: 'Dolar/TL', rate: 34.5, date: dayStamp() },
-        { base: 'EUR', quote: 'TRY', name: 'Euro/TL', rate: 37.2, date: dayStamp() },
-        { base: 'GBP', quote: 'TRY', name: 'Sterlin/TL', rate: 44.1, date: dayStamp() },
-      ];
-    }
+    return liveForexRates();
   }
   if (path.match(/^\/forex\/[^/]+\/[^/]+\/history$/)) {
     const [, , base, quote] = path.split('/');
-    try { return await liveForexHistory(base, quote); } catch {
-      return { base, quote, history: makeHistory(34.5).map(({ time, price }) => ({ time, price })) };
-    }
+    return liveForexHistory(base, quote);
   }
 
   if (path === '/stocks') {
     const market = params.get('market');
-    if (market === 'BIST') return SNAPSHOT_BIST;
-    if (market === 'global') return SNAPSHOT_STOCKS;
-    return [...SNAPSHOT_STOCKS, ...SNAPSHOT_BIST];
+    let base = [...SNAPSHOT_STOCKS, ...SNAPSHOT_BIST];
+    if (market === 'BIST') base = [...SNAPSHOT_BIST];
+    else if (market === 'global') base = [...SNAPSHOT_STOCKS];
+    // Prefer known live universe first, keep snapshot metadata
+    const prefer = market === 'BIST' ? LIVE_BIST_SYMBOLS.filter((s) => s.includes('.'))
+      : market === 'global' ? LIVE_GLOBAL_SYMBOLS
+      : [...LIVE_GLOBAL_SYMBOLS, ...LIVE_BIST_SYMBOLS.filter((s) => s.includes('.'))];
+    const ordered = [
+      ...prefer.map((sym) => base.find((s) => s.symbol === sym) || {
+        symbol: sym, name: sym, market: sym.endsWith('.IS') ? 'BIST' : 'NASDAQ',
+        sector: null, type: null, price: 0, change: 0, changePercent: 0, volume: 0, marketCap: 0,
+        currency: sym.endsWith('.IS') ? 'TRY' : 'USD', high: 0, low: 0,
+      }),
+      ...base.filter((s) => !prefer.includes(s.symbol)),
+    ];
+    return enrichStocks(ordered.slice(0, market === 'BIST' ? 20 : 25));
   }
   if (path.startsWith('/stocks/')) {
-    return stockDetail(path.split('/')[2] || '');
+    return liveStockDetail(path.split('/')[2] || '');
   }
 
   if (path === '/bist') {
     const sector = params.get('sector');
-    const stocks = sector ? SNAPSHOT_BIST.filter((s) => s.sector === sector) : SNAPSHOT_BIST;
-    return { indices: SNAPSHOT_INDICES, stocks, sectors: SNAPSHOT_SECTORS, totalStocks: SNAPSHOT_BIST.length };
+    const baseStocks = sector ? SNAPSHOT_BIST.filter((s) => s.sector === sector) : SNAPSHOT_BIST;
+    const symbols = [...new Set([...LIVE_BIST_SYMBOLS.filter((s) => s.includes('.')), ...baseStocks.map((s) => s.symbol)])];
+    const quotes = await liveYahooQuotes(symbols);
+    const stocks = baseStocks.map((s) => mergeStockLive(s, quotes.get(s.symbol)));
+    const indices = SNAPSHOT_INDICES.map((ind) => {
+      const q = quotes.get(ind.symbol);
+      if (!q || !(q.price > 0)) return { ...ind, _source: 'cache' as const, _label: 'Önbellek' };
+      return { ...ind, price: q.price, change: q.change, changePercent: q.changePercent, _source: q._source };
+    });
+    return { indices, stocks, sectors: SNAPSHOT_SECTORS, totalStocks: stocks.length };
   }
   if (path === '/bist/all') {
     const page = Number(params.get('page') || 1);
@@ -177,54 +212,102 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
     const sector = params.get('sector');
     let stocks = [...SNAPSHOT_BIST];
     if (sector) stocks = stocks.filter((s) => s.sector === sector);
-    const total = stocks.length;
+    const enriched = await enrichStocks(stocks);
+    const total = enriched.length;
     const start = (page - 1) * limit;
-    return { stocks: stocks.slice(start, start + limit), total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
+    return { stocks: enriched.slice(start, start + limit), total, page, limit, totalPages: Math.max(1, Math.ceil(total / limit)) };
   }
   if (path === '/bist/heatmap') {
-    const sectors: Record<string, { id: string; label: string; stocks: typeof SNAPSHOT_BIST; avgChange: number; count: number }> = {};
+    const stocks = await enrichStocks(SNAPSHOT_BIST);
+    const sectors: Record<string, { id: string; label: string; stocks: typeof stocks; avgChange: number; count: number }> = {};
     for (const s of SNAPSHOT_SECTORS) {
-      const stocks = SNAPSHOT_BIST.filter((x) => x.sector === s.id);
-      const avgChange = stocks.length ? stocks.reduce((a, b) => a + b.changePercent, 0) / stocks.length : 0;
-      sectors[s.id] = { id: s.id, label: s.label, stocks, avgChange, count: stocks.length };
+      const list = stocks.filter((x) => x.sector === s.id);
+      const avgChange = list.length ? list.reduce((a, b) => a + b.changePercent, 0) / list.length : 0;
+      sectors[s.id] = { id: s.id, label: s.label, stocks: list, avgChange, count: list.length };
     }
-    return { sectors, stocks: SNAPSHOT_BIST, totalCount: SNAPSHOT_BIST.length };
+    return { sectors, stocks, totalCount: stocks.length };
   }
 
   if (path === '/banks') {
-    const banks = SNAPSHOT_BIST.filter((s) => s.sector === 'banka').map((s) => ({ ...s, bankType: s.type || 'Banka' }));
-    return { banks, bankIndex: SNAPSHOT_INDICES.find((i) => i.symbol === 'XBANK.IS') || null, totalBanks: banks.length };
+    const banksBase = SNAPSHOT_BIST.filter((s) => s.sector === 'banka').map((s) => ({ ...s, bankType: s.type || 'Banka' }));
+    const quotes = await liveYahooQuotes([...banksBase.map((b) => b.symbol), 'XBANK.IS']);
+    const banks = banksBase.map((b) => ({ ...mergeStockLive(b, quotes.get(b.symbol)), bankType: b.bankType }));
+    const idx = quotes.get('XBANK.IS');
+    const bankIndex = idx && idx.price > 0
+      ? { symbol: 'XBANK.IS', name: 'BIST Banka Endeksi', description: '', price: idx.price, change: idx.change, changePercent: idx.changePercent, currency: 'TRY', _source: idx._source }
+      : { ...SNAPSHOT_INDICES.find((i) => i.symbol === 'XBANK.IS')!, _source: 'cache', _label: 'Önbellek' };
+    return { banks, bankIndex, totalBanks: banks.length };
   }
 
   if (path === '/metals') {
-    const category = params.get('category');
-    let metals = SNAPSHOT_METALS;
-    if (category === 'precious' || category === 'industrial') {
-      metals = SNAPSHOT_METALS.filter((m) => m.category === category);
+    try {
+      const live = await liveMetalsData();
+      const category = params.get('category');
+      if (category === 'precious' || category === 'industrial') {
+        return { ...live, metals: live.metals.filter((m) => m.category === category) };
+      }
+      return live;
+    } catch {
+      return {
+        metals: SNAPSHOT_METALS.map((m) => ({ ...m, _source: 'cache', _label: 'Önbellek' })),
+        categories: [
+          { id: 'precious', label: 'Değerli', icon: '🥇', count: 3 },
+          { id: 'industrial', label: 'Endüstriyel', icon: '🔶', count: 1 },
+        ],
+        usdTry: 0,
+        totalMetals: SNAPSHOT_METALS.length,
+        _source: 'cache',
+      };
     }
-    return {
-      metals,
-      categories: [
-        { id: 'precious', label: 'Değerli', icon: '🥇', count: SNAPSHOT_METALS.filter((m) => m.category === 'precious').length },
-        { id: 'industrial', label: 'Endüstriyel', icon: '🔶', count: SNAPSHOT_METALS.filter((m) => m.category === 'industrial').length },
-      ],
-      usdTry: 34.5,
-      totalMetals: SNAPSHOT_METALS.length,
-    };
   }
   if (path.startsWith('/metals/')) {
     const id = path.split('/')[2];
-    const metal = SNAPSHOT_METALS.find((m) => m.id === id || m.symbol === id) || SNAPSHOT_METALS[0];
-    return { ...metal, history: makeHistory(metal.price), high52: metal.price * 1.2, low52: metal.price * 0.8, previousClose: metal.price - metal.change };
+    try {
+      const live = await liveMetalsData();
+      const metal = live.metals.find((m) => m.id === id || m.symbol === id) || live.metals[0];
+      const hist = await liveYahooHistory(String(metal.symbol)).catch(() => makeHistory(Number(metal.price) || 100));
+      return { ...metal, history: hist, high52: Number(metal.price) * 1.2, low52: Number(metal.price) * 0.8 };
+    } catch {
+      const metal = SNAPSHOT_METALS.find((m) => m.id === id || m.symbol === id) || SNAPSHOT_METALS[0];
+      return { ...metal, history: makeHistory(metal.price), high52: metal.price * 1.2, low52: metal.price * 0.8, previousClose: metal.price - metal.change, _source: 'cache', _label: 'Önbellek' };
+    }
   }
 
-  if (path === '/economic') return SNAPSHOT_ECONOMIC;
+  if (path === '/economic') {
+    const quotes = await liveYahooQuotes(LIVE_ECONOMIC.map((e) => e.id));
+    let btcPrice = 0;
+    let btcChange = 0;
+    try {
+      const btc = await liveBtcPrice();
+      btcPrice = btc.price;
+      btcChange = btc.change;
+    } catch { /* */ }
+    return LIVE_ECONOMIC.map((ind) => {
+      if (ind.id === 'BTC-USD' && btcPrice > 0) {
+        return { ...ind, price: btcPrice, change: (btcChange / 100) * btcPrice, changePercent: btcChange, currency: 'USD', _source: 'live' };
+      }
+      const q = quotes.get(ind.id);
+      if (!q || !(q.price > 0)) {
+        const snap = SNAPSHOT_ECONOMIC.find((s) => s.id === ind.id);
+        return { ...ind, price: snap?.price ?? 0, change: snap?.change ?? 0, changePercent: snap?.changePercent ?? 0, currency: snap?.currency ?? 'USD', _source: 'cache', _label: 'Önbellek' };
+      }
+      return { ...ind, price: q.price, change: q.change, changePercent: q.changePercent, currency: q.currency || 'USD', _source: q._source };
+    });
+  }
+
   if (path === '/macro/turkey') return SNAPSHOT_MACRO;
   if (path === '/calendar') return SNAPSHOT_CALENDAR;
   if (path === '/tefas') return SNAPSHOT_TEFAS;
-  if (path === '/analysis') return analysisSnapshot();
+
+  if (path === '/analysis') {
+    const [bist, btc] = await Promise.all([
+      liveYahooQuote('XU100.IS').catch(() => null),
+      liveBtcPrice().catch(() => ({ price: 0, change: 0 })),
+    ]);
+    return analysisLive(bist?.changePercent ?? 0, btc.change);
+  }
   if (path === '/report/daily') {
-    const a = analysisSnapshot();
+    const a = await resolveDemoGet('/analysis') as ReturnType<typeof analysisLive>;
     return {
       generatedAt: new Date().toISOString(),
       title: 'SphereX Markets Günlük Piyasa Raporu',
@@ -259,10 +342,7 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
         results.push({ type: 'metal', id: m.id, name: m.name, symbol: m.symbol });
       }
     }
-    try {
-      const coins = await liveCryptoSearch(q);
-      results.push(...coins);
-    } catch { /* */ }
+    try { results.push(...await liveCryptoSearch(q)); } catch { /* */ }
     return results.slice(0, 15);
   }
 
@@ -271,18 +351,51 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
   if (path === '/watchlist') return readLS(LS_WATCH, []);
   if (path === '/watchlist/prices') {
     const list = readLS<{ id: string; name: string; type: string; symbol: string; addedAt: string }[]>(LS_WATCH, []);
+    const stockSyms = list.filter((i) => i.type !== 'crypto').map((i) => i.symbol);
+    const quotes = stockSyms.length ? await liveYahooQuotes(stockSyms) : new Map();
+    const cryptoMarkets = list.some((i) => i.type === 'crypto') ? await liveCryptoMarkets().catch(() => []) : [];
     return list.map((item) => {
-      const snap = [...SNAPSHOT_BIST, ...SNAPSHOT_STOCKS].find((s) => s.symbol === item.symbol);
-      return { ...item, price: snap?.price ?? 0, change: snap?.changePercent ?? 0 };
+      if (item.type === 'crypto') {
+        const c = cryptoMarkets.find((x) => x.id === item.symbol || x.id.includes(item.symbol));
+        return { ...item, price: c?.current_price ?? 0, change: c?.price_change_percentage_24h ?? 0, _source: c ? 'live' : 'cache' };
+      }
+      const q = quotes.get(item.symbol);
+      return { ...item, price: q?.price ?? 0, change: q?.changePercent ?? 0, _source: q?._source || 'cache' };
     });
   }
   if (path === '/signals/history') return [];
   if (path === '/divergence') return { divergences: [], global: [], updatedAt: new Date().toISOString() };
   if (path === '/compare') {
-    return (params.get('assets') || '').split(',').filter(Boolean).slice(0, 4).map((asset) => {
-      const [, id] = asset.split(':');
-      return { id, type: asset.split(':')[0], name: id, price: 100, change24h: 0, history: makeHistory(100).map((h) => ({ time: h.time, price: 0 })) };
-    });
+    const assets = (params.get('assets') || '').split(',').filter(Boolean).slice(0, 4);
+    const out = [];
+    for (const asset of assets) {
+      const [type, id] = asset.split(':');
+      if (type === 'crypto') {
+        try {
+          const d = await liveCryptoDetail(id);
+          const hist = d.history || [];
+          const base = hist[0]?.price || 1;
+          out.push({
+            id, type, name: d.name, price: d.price, change24h: d.change24h,
+            history: hist.map((h) => ({ time: h.time, price: ((h.price / base) - 1) * 100 })),
+          });
+        } catch {
+          out.push({ id, type, name: id, price: 0, change24h: 0, history: [] });
+        }
+      } else {
+        const sym = type === 'metal' ? (id === 'gold' ? 'GC=F' : 'SI=F') : id;
+        const [q, hist] = await Promise.all([
+          liveYahooQuote(sym),
+          liveYahooHistory(sym).catch(() => []),
+        ]);
+        const base = hist[0]?.price || q.price || 1;
+        out.push({
+          id, type, name: q.symbol, price: q.price, change24h: q.changePercent,
+          history: hist.map((h) => ({ time: h.time, price: ((h.price / base) - 1) * 100 })),
+        });
+      }
+    }
+    return out;
   }
 
   if (path.startsWith('/portfolio/')) {
@@ -293,11 +406,22 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
         `${LS_PORTFOLIO}-${id}`,
         { id, name: 'Portföyüm', items: [] }
       );
+      let markets: Awaited<ReturnType<typeof liveCryptoMarkets>> = [];
+      try { markets = await liveCryptoMarkets(); } catch { /* */ }
+      const stockSyms = pf.items.filter((i) => i.type === 'stock').map((i) => i.symbol);
+      const quotes = stockSyms.length ? await liveYahooQuotes(stockSyms) : new Map();
       const items = pf.items.map((item) => {
-        const currentPrice = item.buyPrice;
+        let currentPrice = item.buyPrice;
+        if (item.type === 'crypto') {
+          const c = markets.find((m) => m.id === item.symbol);
+          if (c?.current_price) currentPrice = c.current_price;
+        } else {
+          const q = quotes.get(item.symbol);
+          if (q && q.price > 0) currentPrice = q.price;
+        }
         const value = currentPrice * item.amount;
         const cost = item.buyPrice * item.amount;
-        return { ...item, currentPrice, value, profit: value - cost, profitPercent: 0 };
+        return { ...item, currentPrice, value, profit: value - cost, profitPercent: cost ? ((value - cost) / cost) * 100 : 0 };
       });
       return { total: items.reduce((a, b) => a + b.value, 0), items };
     }
@@ -327,7 +451,7 @@ export async function resolveDemoPost(endpoint: string, body?: unknown): Promise
     return { id: Date.now().toString(), date: new Date().toISOString(), recommendations: [], crowdConsensus: 55, marketMood: 'Nötr' };
   }
   if (path === '/risk/analyze') {
-    return { score: 45, profile: 'Dengeli', advice: 'Demo risk skoru', breakdown: { cryptoPct: 30, stockPct: 50, metalPct: 20 } };
+    return { score: 45, profile: 'Dengeli', advice: 'Canlı risk skoru (yaklaşık)', breakdown: { cryptoPct: 30, stockPct: 50, metalPct: 20 } };
   }
   if (path === '/scenario') {
     return { currentTotal: 10000, scenarioTotal: 10500, totalChangePercent: 5, items: [], scenarios: { usdChange: 0, bistChange: 0, goldChange: 0, cryptoChange: 0 } };
@@ -345,8 +469,7 @@ export async function resolveDemoDelete(endpoint: string): Promise<unknown> {
   const { path } = parsePath(endpoint);
   if (path.startsWith('/alerts/')) {
     const id = path.split('/')[2];
-    const list = readLS<{ id: string }[]>(LS_ALERTS, []).filter((a) => a.id !== id);
-    writeLS(LS_ALERTS, list);
+    writeLS(LS_ALERTS, readLS<{ id: string }[]>(LS_ALERTS, []).filter((a) => a.id !== id));
     return { ok: true };
   }
   if (path.startsWith('/watchlist/')) {
@@ -356,8 +479,4 @@ export async function resolveDemoDelete(endpoint: string): Promise<unknown> {
     return list;
   }
   return { ok: true };
-}
-
-function dayStamp() {
-  return new Date().toISOString().slice(0, 10);
 }

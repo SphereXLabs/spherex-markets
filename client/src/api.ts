@@ -616,4 +616,6 @@ export interface LiveStreamData {
   usdTry: number;
   bist100: { price: number; change: number };
   gold: { price: number; change: number };
+  sourcesOk?: number;
+  sourcesTotal?: number;
 }

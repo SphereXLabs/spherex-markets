@@ -212,11 +212,25 @@ export function registerFeatureRoutes(app, deps) {
     res.flushHeaders();
     const send = async () => {
       try {
-        const [btc, usdTry, bist, gold] = await Promise.all([
+        const [btcBinance, btcCg, usdTry, bist, goldApi, goldYahoo] = await Promise.all([
+          fetchJSON('https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT').catch(() => null),
           fetchJSON(`${COINGECKO}/simple/price?ids=bitcoin&vs_currencies=usd&include_24hr_change=true`).catch(() => null),
-          getUsdTryRate(), fetchYahooQuote('XU100.IS').catch(() => null), fetchYahooQuote('GC=F').catch(() => null),
+          getUsdTryRate(),
+          fetchYahooQuote('XU100.IS').catch(() => null),
+          fetchJSON('https://api.gold-api.com/price/XAU').catch(() => null),
+          fetchYahooQuote('GC=F').catch(() => null),
         ]);
-        res.write(`data: ${JSON.stringify({ time: new Date().toISOString(), btc: { price: btc?.bitcoin?.usd, change: btc?.bitcoin?.usd_24h_change }, usdTry, bist100: { price: bist?.regularMarketPrice, change: bist?.regularMarketChangePercent }, gold: { price: gold?.regularMarketPrice, change: gold?.regularMarketChangePercent } })}\n\n`);
+        const btcPrice = Number(btcBinance?.lastPrice) || btcCg?.bitcoin?.usd || 0;
+        const btcChange = Number(btcBinance?.priceChangePercent) || btcCg?.bitcoin?.usd_24h_change || 0;
+        const goldPrice = goldApi?.price || goldYahoo?.regularMarketPrice || 0;
+        const goldChange = goldApi?.change || goldYahoo?.regularMarketChangePercent || 0;
+        res.write(`data: ${JSON.stringify({
+          time: new Date().toISOString(),
+          btc: { price: btcPrice, change: btcChange },
+          usdTry,
+          bist100: { price: bist?.regularMarketPrice, change: bist?.regularMarketChangePercent },
+          gold: { price: goldPrice, change: goldChange },
+        })}\n\n`);
       } catch { /* */ }
     };
     await send();

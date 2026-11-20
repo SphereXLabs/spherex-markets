@@ -129,19 +129,81 @@ function mapStockQuote(stock, quote) {
   };
 }
 
+const BINANCE_COINS = [
+  { symbol: 'BTCUSDT', id: 'bitcoin', name: 'Bitcoin' },
+  { symbol: 'ETHUSDT', id: 'ethereum', name: 'Ethereum' },
+  { symbol: 'BNBUSDT', id: 'binancecoin', name: 'BNB' },
+  { symbol: 'SOLUSDT', id: 'solana', name: 'Solana' },
+  { symbol: 'XRPUSDT', id: 'ripple', name: 'XRP' },
+  { symbol: 'ADAUSDT', id: 'cardano', name: 'Cardano' },
+  { symbol: 'AVAXUSDT', id: 'avalanche-2', name: 'Avalanche' },
+  { symbol: 'DOGEUSDT', id: 'dogecoin', name: 'Dogecoin' },
+  { symbol: 'DOTUSDT', id: 'polkadot', name: 'Polkadot' },
+  { symbol: 'LINKUSDT', id: 'chainlink', name: 'Chainlink' },
+  { symbol: 'LTCUSDT', id: 'litecoin', name: 'Litecoin' },
+  { symbol: 'UNIUSDT', id: 'uniswap', name: 'Uniswap' },
+  { symbol: 'ATOMUSDT', id: 'cosmos', name: 'Cosmos' },
+  { symbol: 'NEARUSDT', id: 'near', name: 'NEAR' },
+];
+
+async function fetchBinanceMarkets() {
+  const tickers = await fetchJSON('https://api.binance.com/api/v3/ticker/24hr');
+  const bySym = new Map(tickers.map((t) => [t.symbol, t]));
+  const markets = BINANCE_COINS.flatMap((c, i) => {
+    const t = bySym.get(c.symbol);
+    if (!t) return [];
+    const price = Number(t.lastPrice);
+    if (!(price > 0)) return [];
+    return [{
+      id: c.id,
+      symbol: c.symbol.replace('USDT', '').toLowerCase(),
+      name: c.name,
+      image: '',
+      current_price: price,
+      market_cap: 0,
+      total_volume: Number(t.quoteVolume) || 0,
+      price_change_percentage_24h: Number(t.priceChangePercent) || 0,
+      sparkline_in_7d: { price: [] },
+      market_cap_rank: i + 1,
+      _source: 'binance',
+    }];
+  });
+  if (!markets.length) throw new Error('Binance boş');
+  return markets;
+}
+
 app.get('/api/crypto/markets', async (req, res) => {
   const key = 'crypto-markets';
   try {
     const cached = cache.get(key);
     if (cached) return res.json(cached);
 
-    const data = await fetchJSON(
-      `${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=1h,24h,7d`
-    );
+    let data;
+    try {
+      data = await fetchBinanceMarkets();
+    } catch {
+      data = await fetchJSON(
+        `${COINGECKO}/coins/markets?vs_currency=usd&order=market_cap_desc&per_page=50&page=1&sparkline=true&price_change_percentage=1h,24h,7d`
+      );
+    }
     remember(key, data, CACHE_TTL);
     res.json(data);
   } catch (e) {
     fail(res, key, e, () => FALLBACK_CRYPTO_MARKETS);
+  }
+});
+
+app.get('/api/crypto/global', async (req, res) => {
+  const key = 'crypto-global';
+  try {
+    const cached = cache.get(key);
+    if (cached) return res.json(cached);
+
+    const data = await fetchJSON(`${COINGECKO}/global`);
+    remember(key, data.data, CACHE_TTL);
+    res.json(data.data);
+  } catch (e) {
+    fail(res, key, e, () => FALLBACK_CRYPTO_GLOBAL);
   }
 });
 
@@ -183,20 +245,6 @@ app.get('/api/crypto/:id', async (req, res) => {
     res.json(result);
   } catch (e) {
     res.status(500).json({ error: e.message });
-  }
-});
-
-app.get('/api/crypto/global', async (req, res) => {
-  const key = 'crypto-global';
-  try {
-    const cached = cache.get(key);
-    if (cached) return res.json(cached);
-
-    const data = await fetchJSON(`${COINGECKO}/global`);
-    remember(key, data.data, CACHE_TTL);
-    res.json(data.data);
-  } catch (e) {
-    fail(res, key, e, () => FALLBACK_CRYPTO_GLOBAL);
   }
 });
 
@@ -373,20 +421,32 @@ app.get('/api/forex', async (req, res) => {
     const cached = cache.get(key);
     if (cached) return res.json(cached);
 
-    const results = [];
-    for (const pair of FOREX_PAIRS) {
-      try {
-        const data = await fetchJSON(
-          `https://api.frankfurter.app/latest?from=${pair.base}&to=${pair.quote}`
-        );
-        results.push({
-          ...pair,
-          rate: data.rates[pair.quote],
-          date: data.date,
-        });
-      } catch {
-        results.push({ ...pair, rate: 0, date: null });
-      }
+    let results = [];
+    try {
+      const [usd, eur, gbp] = await Promise.all([
+        fetchJSON('https://api.frankfurter.app/latest?from=USD'),
+        fetchJSON('https://api.frankfurter.app/latest?from=EUR&to=USD,TRY'),
+        fetchJSON('https://api.frankfurter.app/latest?from=GBP&to=USD,TRY'),
+      ]);
+      results = FOREX_PAIRS.map((pair) => {
+        let rate = 0;
+        if (pair.base === 'USD') rate = usd.rates?.[pair.quote] ?? 0;
+        else if (pair.base === 'EUR' && pair.quote === 'TRY') rate = eur.rates?.TRY ?? 0;
+        else if (pair.base === 'EUR' && pair.quote === 'USD') rate = eur.rates?.USD ?? 0;
+        else if (pair.base === 'GBP' && pair.quote === 'TRY') rate = gbp.rates?.TRY ?? 0;
+        else if (pair.base === 'GBP' && pair.quote === 'USD') rate = gbp.rates?.USD ?? 0;
+        return { ...pair, rate, date: usd.date, _source: rate > 0 ? 'frankfurter' : undefined };
+      });
+    } catch {
+      const data = await fetchJSON('https://open.er-api.com/v6/latest/USD');
+      const r = data.rates || {};
+      results = FOREX_PAIRS.map((pair) => {
+        let rate = 0;
+        if (pair.base === 'USD') rate = r[pair.quote] ?? 0;
+        else if (pair.quote === 'USD') rate = r[pair.base] ? 1 / r[pair.base] : 0;
+        else if (r[pair.base] && r[pair.quote]) rate = r[pair.quote] / r[pair.base];
+        return { ...pair, rate, date: data.time_last_update_utc?.slice(0, 10) || null, _source: rate > 0 ? 'er-api' : undefined };
+      });
     }
 
     const usable = results.filter((r) => r.rate > 0);
@@ -404,11 +464,35 @@ async function getUsdTryRate() {
   try {
     const data = await fetchJSON('https://api.frankfurter.app/latest?from=USD&to=TRY');
     const rate = data.rates?.TRY ?? 0;
-    if (rate > 0) remember('usd-try', rate, 300);
-    return rate;
+    if (rate > 0) {
+      remember('usd-try', rate, 300);
+      return rate;
+    }
+    throw new Error('empty');
   } catch {
-    return cache.get('usd-try') || staleCache.get('stale:usd-try') || 34.5;
+    try {
+      const data = await fetchJSON('https://open.er-api.com/v6/latest/USD');
+      const rate = data.rates?.TRY ?? 0;
+      if (rate > 0) {
+        remember('usd-try', rate, 300);
+        return rate;
+      }
+    } catch { /* */ }
+    return cache.get('usd-try') || staleCache.get('stale:usd-try') || 0;
   }
+}
+
+async function fetchGoldApiPrice(metal) {
+  const data = await fetchJSON(`https://api.gold-api.com/price/${metal}`);
+  if (!(data?.price > 0)) throw new Error(`${metal} boş`);
+  return {
+    regularMarketPrice: data.price,
+    regularMarketChange: data.change || data.ch || 0,
+    regularMarketChangePercent: 0,
+    regularMarketDayHigh: data.price,
+    regularMarketDayLow: data.price,
+    regularMarketVolume: 0,
+  };
 }
 
 function mapMetalQuote(metal, quote, usdTry = 0) {
@@ -454,10 +538,16 @@ app.get('/api/metals', async (req, res) => {
     const cached = cache.get(key);
     if (cached) return res.json(cached);
 
-    const [quotes, usdTry] = await Promise.all([
-      fetchQuotesBatch(metals.map((m) => m.symbol), 4),
-      getUsdTryRate(),
-    ]);
+    const usdTry = await getUsdTryRate();
+    const quotes = await Promise.all(metals.map(async (metal) => {
+      if (metal.id === 'gold') {
+        try { return await fetchGoldApiPrice('XAU'); } catch { /* yahoo */ }
+      }
+      if (metal.id === 'silver') {
+        try { return await fetchGoldApiPrice('XAG'); } catch { /* yahoo */ }
+      }
+      try { return await fetchYahooQuote(metal.symbol); } catch { return null; }
+    }));
 
     const metalResults = metals.map((metal, i) => mapMetalQuote(metal, quotes[i], usdTry));
 

@@ -9,6 +9,7 @@ import { api, SearchResult, isDemoMode, subscribeDemoMode } from '../api';
 import { timeAgo, formatPrice } from '../hooks';
 import { useLiveData } from '../hooks/useLiveData';
 import { useApp } from '../context/AppContext';
+import { getLiveStatus, subscribeLiveStatus } from '../demo/status';
 
 const NAV_MAIN = [
   { to: '/', icon: LayoutDashboard, key: 'nav.overview' },
@@ -44,15 +45,18 @@ export default function Layout({ children }: LayoutProps) {
   const location = useLocation();
   const navigate = useNavigate();
   const { t, theme, setTheme, lang, setLang } = useApp();
-  const { data: live, connected } = useLiveData();
+  const { data: live, connected, statusLabel } = useLiveData();
   const [search, setSearch] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [showResults, setShowResults] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [demoMode, setDemoMode] = useState(isDemoMode());
+  const [liveBadge, setLiveBadge] = useState(() => getLiveStatus().label);
   const searchRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => subscribeDemoMode(() => setDemoMode(true)), []);
+  useEffect(() => subscribeLiveStatus(() => setLiveBadge(getLiveStatus().label)), []);
+  useEffect(() => { if (statusLabel) setLiveBadge(statusLabel); }, [statusLabel]);
 
   useEffect(() => {
     const handler = (e: MouseEvent) => {
@@ -124,12 +128,20 @@ export default function Layout({ children }: LayoutProps) {
         <div className="p-4 border-t border-surface-border space-y-2">
           <div className="flex items-center gap-2 text-xs text-gray-500">
             <span className={`w-2 h-2 rounded-full ${connected ? 'bg-emerald-400 animate-pulse-slow' : 'bg-gray-500'}`} />
-            {t('common.live')} · {timeAgo(lastUpdate)}
+            <span className="leading-tight">
+              {demoMode || connected ? 'Canlı Piyasa Verisi' : t('common.live')}
+              <span className="text-gray-600"> · {timeAgo(lastUpdate)}</span>
+            </span>
           </div>
+          {(demoMode || live) && (
+            <div className="text-[10px] text-emerald-500/80 leading-tight">{liveBadge}</div>
+          )}
           {live && (
             <div className="text-[10px] text-gray-600 space-y-0.5 font-mono">
               <div>BTC {formatPrice(live.btc?.price)}</div>
               <div>USD/TRY {live.usdTry?.toFixed(2)}</div>
+              {live.bist100?.price > 0 && <div>XU100 {formatPrice(live.bist100.price)}</div>}
+              {live.gold?.price > 0 && <div>XAU {formatPrice(live.gold.price)}</div>}
             </div>
           )}
         </div>
@@ -177,12 +189,15 @@ export default function Layout({ children }: LayoutProps) {
             </div>
 
             <div className="flex items-center gap-2">
-              {demoMode && (
+              {(demoMode || connected) && (
                 <span
-                  className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-medium tracking-wide text-amber-200/90 bg-amber-500/10 border border-amber-500/20"
-                  title="Backend API yok — Frankfurter, CoinGecko ve demo snapshot kullanılıyor"
+                  className="hidden sm:inline-flex items-center px-2.5 py-1 rounded-md text-[10px] font-medium tracking-wide text-emerald-200/90 bg-emerald-500/10 border border-emerald-500/20"
+                  title={liveBadge}
                 >
-                  Canlı Web Demo Modu
+                  Canlı Piyasa Verisi
+                  {live?.sourcesOk != null && live.sourcesTotal != null && (
+                    <span className="ml-1 opacity-80">{live.sourcesOk}/{live.sourcesTotal}</span>
+                  )}
                 </span>
               )}
               <button onClick={() => setLang(lang === 'tr' ? 'en' : 'tr')}

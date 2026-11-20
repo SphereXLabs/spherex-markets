@@ -1,14 +1,19 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { LiveStreamData, isDemoMode, subscribeDemoMode } from '../api';
 import { enableDemoMode } from '../demo/mode';
 import { liveTick } from '../demo/live';
+import { getLiveStatus, subscribeLiveStatus } from '../demo/status';
 
 export function useLiveData(enabled = true) {
   const [data, setData] = useState<LiveStreamData | null>(null);
   const [connected, setConnected] = useState(false);
   const [demo, setDemo] = useState(isDemoMode());
+  const [statusLabel, setStatusLabel] = useState(() => getLiveStatus().label);
+  const dataRef = useRef<LiveStreamData | null>(null);
 
+  useEffect(() => { dataRef.current = data; }, [data]);
   useEffect(() => subscribeDemoMode(() => setDemo(true)), []);
+  useEffect(() => subscribeLiveStatus(() => setStatusLabel(getLiveStatus().label)), []);
 
   useEffect(() => {
     if (!enabled) return;
@@ -21,22 +26,15 @@ export function useLiveData(enabled = true) {
           if (!cancelled) {
             setData(tick);
             setConnected(true);
+            setStatusLabel(getLiveStatus().label);
           }
         } catch {
-          if (!cancelled) {
-            setData({
-              time: new Date().toISOString(),
-              btc: { price: 65000, change: 0 },
-              usdTry: 34.5,
-              bist100: { price: 9850, change: 0.4 },
-              gold: { price: 2350, change: 0.3 },
-            });
-            setConnected(true);
-          }
+          // Keep previous real tick — never inject hardcoded fake prices
+          if (!cancelled) setConnected(Boolean(dataRef.current));
         }
       };
       poll();
-      const id = window.setInterval(poll, 30000);
+      const id = window.setInterval(poll, 20000);
       return () => {
         cancelled = true;
         window.clearInterval(id);
@@ -46,7 +44,10 @@ export function useLiveData(enabled = true) {
     const es = new EventSource('/api/stream');
     es.onopen = () => setConnected(true);
     es.onmessage = (e) => {
-      try { setData(JSON.parse(e.data)); } catch { /* */ }
+      try {
+        setData(JSON.parse(e.data));
+        setConnected(true);
+      } catch { /* */ }
     };
     es.onerror = () => {
       setConnected(false);
@@ -57,5 +58,5 @@ export function useLiveData(enabled = true) {
     return () => es.close();
   }, [enabled, demo]);
 
-  return { data, connected };
+  return { data, connected, statusLabel, liveStatus: getLiveStatus() };
 }
