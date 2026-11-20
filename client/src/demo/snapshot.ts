@@ -20,6 +20,8 @@ export const SNAPSHOT_BIST = [
   { symbol: 'THYAO.IS', name: 'Türk Hava Yolları', market: 'BIST', sector: 'havacilik', type: 'Havayolu', price: 312.5, change: 4.2, changePercent: 1.36, volume: 45e6, marketCap: 4.2e11, currency: 'TRY', high: 315, low: 308 },
   { symbol: 'GARAN.IS', name: 'Garanti BBVA', market: 'BIST', sector: 'banka', type: 'Özel Banka', price: 118.4, change: -0.8, changePercent: -0.67, volume: 80e6, marketCap: 5e11, currency: 'TRY', high: 120, low: 117 },
   { symbol: 'AKBNK.IS', name: 'Akbank', market: 'BIST', sector: 'banka', type: 'Özel Banka', price: 62.15, change: 0.45, changePercent: 0.73, volume: 95e6, marketCap: 3.2e11, currency: 'TRY', high: 62.8, low: 61.5 },
+  { symbol: 'ISCTR.IS', name: 'İş Bankası (C)', market: 'BIST', sector: 'banka', type: 'Özel Banka', price: 14.2, change: 0, changePercent: 0, volume: 0, marketCap: 0, currency: 'TRY', high: 0, low: 0 },
+  { symbol: 'YKBNK.IS', name: 'Yapı Kredi', market: 'BIST', sector: 'banka', type: 'Özel Banka', price: 28.5, change: 0, changePercent: 0, volume: 0, marketCap: 0, currency: 'TRY', high: 0, low: 0 },
   { symbol: 'ASELS.IS', name: 'Aselsan', market: 'BIST', sector: 'savunma', type: 'Savunma', price: 78.9, change: 1.6, changePercent: 2.07, volume: 30e6, marketCap: 1.8e11, currency: 'TRY', high: 79.5, low: 77 },
   { symbol: 'EREGL.IS', name: 'Ereğli Demir Çelik', market: 'BIST', sector: 'sanayi', type: 'Demir Çelik', price: 54.2, change: -0.3, changePercent: -0.55, volume: 55e6, marketCap: 1.9e11, currency: 'TRY', high: 55, low: 53.8 },
   { symbol: 'BIMAS.IS', name: 'BİM', market: 'BIST', sector: 'perakende', type: 'Perakende', price: 520.0, change: 6.5, changePercent: 1.27, volume: 8e6, marketCap: 3.1e11, currency: 'TRY', high: 525, low: 512 },

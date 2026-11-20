@@ -9,7 +9,7 @@
 
 **Live demo:** [https://spherexlabs.github.io/spherex-markets/](https://spherexlabs.github.io/spherex-markets/)
 
-> On GitHub Pages the UI shows **Canlı Piyasa Verisi**: browser-side Frankfurter / ER-API (FX), Binance + CoinGecko (crypto), gold-api / Yahoo (metals), and Yahoo chart quotes via CORS relay (BIST & global equities). Individual timed-out items may show **Önbellek** — never silent fake prices.
+> On GitHub Pages the UI shows **Canlı Piyasa Verisi** with source count + last refresh time: Frankfurter / ER-API (FX), Binance + CoinGecko (crypto), gold-api / Yahoo (metals & gram TRY), Yahoo chart via `allorigins` → `corsproxy.io` (BIST & US equities), and Google News RSS for headlines. **Yenile** clears caches and force-refetches all providers. Timed-out items may show **Önbellek** — never silent fake prices.
 
 ---
 

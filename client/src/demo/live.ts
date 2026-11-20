@@ -59,14 +59,33 @@ type TickCache = {
 
 let lastTick: TickCache | null = null;
 const quoteCache = new Map<string, YahooQuoteLive>();
+let forceBust = false;
+
+/** Clear in-memory live caches and mark next fetches as uncached */
+export function clearLiveCaches(): void {
+  quoteCache.clear();
+  lastTick = null;
+  forceBust = true;
+}
+
+export function endForceRefresh(): void {
+  forceBust = false;
+}
+
+function withBust(url: string): string {
+  if (!forceBust) return url;
+  const sep = url.includes('?') ? '&' : '?';
+  return `${url}${sep}_cb=${Date.now()}`;
+}
 
 async function getJSON<T>(url: string, timeoutMs = 8000): Promise<T> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const res = await fetch(url, {
+    const res = await fetch(withBust(url), {
       headers: { Accept: 'application/json' },
       signal: controller.signal,
+      cache: forceBust ? 'no-store' : 'default',
     });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return res.json() as Promise<T>;
@@ -75,13 +94,43 @@ async function getJSON<T>(url: string, timeoutMs = 8000): Promise<T> {
   }
 }
 
-/** Direct fetch, then CORS relay for Yahoo / blocked origins */
+async function getText(url: string, timeoutMs = 12000): Promise<string> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(withBust(url), {
+      signal: controller.signal,
+      cache: forceBust ? 'no-store' : 'default',
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    return res.text();
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+/** Direct → allorigins → corsproxy.io */
 async function getJSONMaybeCors<T>(url: string): Promise<T> {
   try {
     return await getJSON<T>(url, 6000);
   } catch {
-    const relay = `https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`;
-    return getJSON<T>(relay, 12000);
+    try {
+      return await getJSON<T>(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 12000);
+    } catch {
+      return getJSON<T>(`https://corsproxy.io/?${encodeURIComponent(url)}`, 12000);
+    }
+  }
+}
+
+async function getTextMaybeCors(url: string): Promise<string> {
+  try {
+    return await getText(url, 8000);
+  } catch {
+    try {
+      return await getText(`https://api.allorigins.win/raw?url=${encodeURIComponent(url)}`, 12000);
+    } catch {
+      return getText(`https://corsproxy.io/?${encodeURIComponent(url)}`, 12000);
+    }
   }
 }
 
@@ -114,13 +163,15 @@ export async function fetchUsdTry(): Promise<number> {
 }
 
 export async function liveForexRates() {
-  // Primary: single Frankfurter multi-quote from USD + EUR/GBP bases
+  // Primary: Frankfurter USD→TRY,EUR,GBP + EUR/GBP crosses
   try {
-    const [usd, eur, gbp] = await Promise.all([
+    const [usdCore, usdAll, eur, gbp] = await Promise.all([
+      getJSON<{ rates: Record<string, number>; date: string }>('https://api.frankfurter.app/latest?from=USD&to=TRY,EUR,GBP'),
       getJSON<{ rates: Record<string, number>; date: string }>('https://api.frankfurter.app/latest?from=USD'),
       getJSON<{ rates: Record<string, number>; date: string }>('https://api.frankfurter.app/latest?from=EUR&to=USD,TRY'),
       getJSON<{ rates: Record<string, number>; date: string }>('https://api.frankfurter.app/latest?from=GBP&to=USD,TRY'),
     ]);
+    const usd = { rates: { ...usdAll.rates, ...usdCore.rates }, date: usdCore.date || usdAll.date };
     const results = FX_PAIR_META.map((pair) => {
       let rate = 0;
       if (pair.base === 'USD') rate = usd.rates[pair.quote] ?? 0;
@@ -421,7 +472,7 @@ export async function liveBtcPrice(): Promise<{ price: number; change: number }>
 // ─── Yahoo equities (CORS relay) ─────────────────────────────────
 
 export async function liveYahooQuote(symbol: string): Promise<YahooQuoteLive> {
-  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=5d`;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(symbol)}?interval=1d&range=2d`;
   try {
     const data = await getJSONMaybeCors<{
       chart?: { result?: { meta?: Record<string, number | string>; timestamp?: number[]; indicators?: { quote?: { close?: (number | null)[]; volume?: (number | null)[] }[] } }[] };
@@ -545,5 +596,125 @@ export async function liveTick(): Promise<TickCache> {
   };
   lastTick = tick;
   recordSource('tick', 'Live tick', ok > 0, `${ok}/4`);
+  endForceRefresh();
   return tick;
+}
+
+// ─── Live news (RSS via CORS / rss2json) ──────────────────────────
+
+export type LiveNewsItem = {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  source: string;
+  date: string;
+  image?: string | null;
+  category?: string;
+  region?: 'tr' | 'global';
+};
+
+function hashId(s: string): string {
+  let h = 0;
+  for (let i = 0; i < s.length; i++) h = ((h << 5) - h) + s.charCodeAt(i);
+  return `n${Math.abs(h).toString(36)}`;
+}
+
+function parseRssXml(xml: string, region: 'tr' | 'global'): LiveNewsItem[] {
+  const doc = new DOMParser().parseFromString(xml, 'text/xml');
+  const items = [...doc.querySelectorAll('item')].slice(0, 20);
+  return items.map((item) => {
+    const title = item.querySelector('title')?.textContent?.trim() || '';
+    const link = item.querySelector('link')?.textContent?.trim() || '#';
+    const description = (item.querySelector('description')?.textContent || '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 280);
+    const date = item.querySelector('pubDate')?.textContent || new Date().toISOString();
+    const source = item.querySelector('source')?.textContent
+      || (region === 'tr' ? 'Google News TR' : 'Google News');
+    return {
+      id: hashId(link || title),
+      title,
+      description,
+      url: link,
+      source,
+      date: new Date(date).toISOString(),
+      image: null,
+      category: region === 'tr' ? 'tr' : 'global',
+      region,
+    };
+  }).filter((n) => n.title);
+}
+
+async function fetchRssFeed(rssUrl: string, region: 'tr' | 'global'): Promise<LiveNewsItem[]> {
+  // 1) rss2json (often CORS-open)
+  try {
+    const data = await getJSON<{
+      status?: string;
+      items?: { title: string; link: string; description?: string; pubDate?: string; author?: string }[];
+    }>(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent(rssUrl)}`, 10000);
+    if (data.items?.length) {
+      return data.items.slice(0, 15).map((item) => ({
+        id: hashId(item.link || item.title),
+        title: item.title,
+        description: (item.description || '').replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 280),
+        url: item.link || '#',
+        source: item.author || (region === 'tr' ? 'Google News TR' : 'Google News'),
+        date: item.pubDate ? new Date(item.pubDate).toISOString() : new Date().toISOString(),
+        image: null,
+        category: region === 'tr' ? 'tr' : 'global',
+        region,
+      }));
+    }
+  } catch { /* try raw RSS */ }
+
+  const xml = await getTextMaybeCors(rssUrl);
+  return parseRssXml(xml, region);
+}
+
+export async function liveNews(region: 'all' | 'tr' | 'global' = 'all', q = ''): Promise<LiveNewsItem[]> {
+  const feeds: { url: string; region: 'tr' | 'global' }[] = [];
+  if (region === 'tr' || region === 'all') {
+    feeds.push({
+      url: 'https://news.google.com/rss/search?q=ekonomi+OR+borsa+OR+TCMB+OR+d%C3%B6viz&hl=tr&gl=TR&ceid=TR:tr',
+      region: 'tr',
+    });
+  }
+  if (region === 'global' || region === 'all') {
+    feeds.push({
+      url: 'https://news.google.com/rss/search?q=economy+OR+markets+OR+%22Federal+Reserve%22+OR+stocks&hl=en-US&gl=US&ceid=US:en',
+      region: 'global',
+    });
+  }
+
+  const settled = await Promise.allSettled(feeds.map((f) => fetchRssFeed(f.url, f.region)));
+  let items: LiveNewsItem[] = [];
+  let ok = 0;
+  for (const s of settled) {
+    if (s.status === 'fulfilled' && s.value.length) {
+      items.push(...s.value);
+      ok += 1;
+    }
+  }
+
+  if (q) {
+    const ql = q.toLowerCase();
+    items = items.filter((n) => n.title.toLowerCase().includes(ql) || n.description.toLowerCase().includes(ql));
+  }
+
+  items.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
+  const unique = new Map<string, LiveNewsItem>();
+  for (const n of items) {
+    if (!unique.has(n.title)) unique.set(n.title, n);
+  }
+  const result = [...unique.values()].slice(0, 40);
+
+  if (result.length) {
+    recordSource('news', 'Live news RSS', true, `${ok}/${feeds.length} feeds · ${result.length} items`);
+    return result;
+  }
+  recordSource('news', 'Live news RSS', false);
+  throw new Error('news live failed');
 }

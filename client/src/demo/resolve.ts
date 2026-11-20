@@ -6,7 +6,7 @@ import {
 import {
   liveForexRates, liveForexHistory, liveCryptoMarkets, liveCryptoGlobal,
   liveCryptoDetail, liveCryptoSearch, liveMetalsData, liveYahooQuotes,
-  liveYahooQuote, liveYahooHistory, mergeStockLive, liveBtcPrice,
+  liveYahooQuote, liveYahooHistory, mergeStockLive, liveBtcPrice, liveNews,
 } from './live';
 
 const LS_ALERTS = 'spherex-demo-alerts';
@@ -319,13 +319,17 @@ export async function resolveDemoGet(endpoint: string): Promise<unknown> {
   }
 
   if (path === '/news' || path === '/news/turkey') {
-    const region = params.get('region') || (path.includes('turkey') ? 'tr' : 'all');
+    const region = (params.get('region') || (path.includes('turkey') ? 'tr' : 'all')) as 'all' | 'tr' | 'global';
     const q = (params.get('q') || '').toLowerCase();
-    let news = SNAPSHOT_NEWS;
-    if (region === 'tr') news = news.filter((n) => n.region === 'tr');
-    if (region === 'global') news = news.filter((n) => n.region === 'global');
-    if (q) news = news.filter((n) => n.title.toLowerCase().includes(q) || n.description.toLowerCase().includes(q));
-    return news;
+    try {
+      return await liveNews(region, q);
+    } catch {
+      let news = SNAPSHOT_NEWS.map((n) => ({ ...n, _source: 'cache' as const, _label: 'Önbellek' }));
+      if (region === 'tr') news = news.filter((n) => n.region === 'tr');
+      if (region === 'global') news = news.filter((n) => n.region === 'global');
+      if (q) news = news.filter((n) => n.title.toLowerCase().includes(q) || n.description.toLowerCase().includes(q));
+      return news;
+    }
   }
 
   if (path === '/search') {

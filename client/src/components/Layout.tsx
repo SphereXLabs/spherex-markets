@@ -9,7 +9,8 @@ import { api, SearchResult, isDemoMode, subscribeDemoMode } from '../api';
 import { timeAgo, formatPrice } from '../hooks';
 import { useLiveData } from '../hooks/useLiveData';
 import { useApp } from '../context/AppContext';
-import { getLiveStatus, subscribeLiveStatus } from '../demo/status';
+import { getLiveStatus, resetLiveStatus, subscribeLiveStatus } from '../demo/status';
+import { clearLiveCaches } from '../demo/live';
 
 const NAV_MAIN = [
   { to: '/', icon: LayoutDashboard, key: 'nav.overview' },
@@ -209,8 +210,17 @@ export default function Layout({ children }: LayoutProps) {
                 {theme === 'dark' ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
               </button>
               <button
-                onClick={() => { setLastUpdate(new Date()); window.location.reload(); }}
+                onClick={() => {
+                  clearLiveCaches();
+                  resetLiveStatus();
+                  setLastUpdate(new Date());
+                  // Hard reload so every provider re-fetches uncached
+                  const url = new URL(window.location.href);
+                  url.searchParams.set('_r', String(Date.now()));
+                  window.location.replace(url.toString());
+                }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-card border border-surface-border text-sm text-gray-400 hover:text-white hover:border-spherex-600 transition-colors"
+                title="Tüm canlı kaynakları önbelleksiz yenile"
               >
                 <RefreshCw className="w-4 h-4" />
                 <span className="hidden sm:inline">{t('common.refresh')}</span>
